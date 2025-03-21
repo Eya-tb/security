@@ -19,13 +19,25 @@ public class DocumentService {
 
     // 🔹 Téléverser un document
     public Document uploadDocument(MultipartFile file, User user) throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Le fichier ne peut pas être vide !");
+        }
+        if (user == null) {
+            throw new IllegalArgumentException("L'utilisateur est introuvable !");
+        }
+
         Document document = new Document();
         document.setName(file.getOriginalFilename());
-        document.setType(file.getContentType());
+
+        // 🔹 Ajoute cette ligne pour récupérer le type MIME du fichier
+        document.setType(file.getContentType() != null ? file.getContentType() : "application/octet-stream");
+
         document.setContent(file.getBytes());
         document.setUser(user);
+
         return documentRepository.save(document);
     }
+
 
     // 🔹 Récupérer tous les documents d'un utilisateur
     public List<Document> getDocumentsByUser(User user) {

@@ -1,13 +1,10 @@
 package com.example.security.entities;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 @Entity
-@Table(name = "documents") // Explicit table name
+@Table(name = "documents")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -18,19 +15,19 @@ public class Document {
     private Long id;
 
     @Column(nullable = false)
-    private String name; // Nom du fichier
+    private String name;
 
     @Column(nullable = false)
-    private String type; // PDF, XML, JSON, TXT, DOCX
+    private String type;
 
     @Lob
     @Column(nullable = false)
-    private byte[] content; // Contenu binaire du fichier
+    private byte[] content;
 
     @OneToOne(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
     private Signature signature;
 
     @ManyToOne(optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", referencedColumnName = "id", nullable = false)
     private User user;
 }

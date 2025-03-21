@@ -9,5 +9,5 @@ import java.util.List;
 
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
-    List<Document> findByUser(User user); // Trouver tous les documents d'un utilisateur
+    List<com.example.security.entities.Document> findByUser(User user); // Trouver tous les documents d'un utilisateur
 }

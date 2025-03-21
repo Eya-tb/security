@@ -1,13 +1,16 @@
 package com.example.security.services;
 
+
 import com.example.security.entities.Document;
 import com.example.security.entities.Signature;
 import com.example.security.entities.User;
+import com.example.security.repositories.DocumentRepository;
 import com.example.security.repositories.SignatureRepository;
+import com.example.security.repositories.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.security.*;
-import java.security.spec.InvalidKeySpecException;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -15,32 +18,77 @@ import java.util.Base64;
 @Service
 public class SignatureService {
     private final SignatureRepository signatureRepository;
+    private final DocumentRepository documentRepository;
+    private final UserRepository userRepository;
 
-    public SignatureService(SignatureRepository signatureRepository) {
+    public SignatureService(SignatureRepository signatureRepository, DocumentRepository documentRepository, UserRepository userRepository) {
         this.signatureRepository = signatureRepository;
+        this.documentRepository = documentRepository;
+        this.userRepository = userRepository;
     }
 
     // 🔹 Générer une signature numérique
-    public Signature signerDocument(Document document, User user, PrivateKey privateKey) throws Exception {
-        byte[] documentHash = hashDocument(document.getContent()); // 1. Hasher le document
-        byte[] signatureBytes = signHash(documentHash, privateKey); // 2. Signer le hash
+    public Signature signerDocument(Long documentId, Long userId, byte[] privateKeyBase64) throws Exception {
+        // Vérifier si le document existe
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new RuntimeException("Document introuvable avec ID : " + documentId));
 
+        // Vérifier si l'utilisateur existe
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Utilisateur introuvable avec ID : " + userId));
+
+        // Charger la clé privée
+        byte[] privateKeyBytes = Base64.getDecoder().decode(privateKeyBase64);
+        PrivateKey privateKey = loadPrivateKey(privateKeyBytes);
+
+        // Hasher le document
+        byte[] documentHash = hashDocument(document.getContent());
+
+        // Signer le hash
+        byte[] signatureBytes = signHash(documentHash, privateKey);
+
+        // Stocker la signature
         Signature signature = new Signature();
         signature.setSignedHash(signatureBytes);
         signature.setAlgorithm("SHA256withRSA");
-        signature.setPublicKey(encodePublicKey(privateKey)); // Correct way to get PublicKey
         signature.setSignedAt(LocalDateTime.now());
         signature.setDocument(document);
         signature.setUser(user);
 
-        return signatureRepository.save(signature); // 3. Stocker la signature
+        return signatureRepository.save(signature);
     }
 
-    // 🔹 Vérifier une signature numérique
-    public boolean verifierSignature(Document document, byte[] signedHash, PublicKey publicKey) throws Exception {
-        byte[] documentHash = hashDocument(document.getContent()); // 1. Recalculer le hash
-        return verifySignature(documentHash, signedHash, publicKey); // 2. Vérifier
+
+
+    // 🔹 Charger une clé privée depuis un tableau de bytes
+    private PrivateKey loadPrivateKey(byte[] privateKeyBytes) throws Exception {
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        return keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes));
     }
+
+
+    // 🔹 Vérifier une signature numérique
+    public boolean verifierSignature(Long documentId, String signedHashBase64, String publicKeyBase64) throws Exception {
+        // Vérifier que le document existe
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new RuntimeException("Document introuvable avec ID : " + documentId));
+
+        // Charger la clé publique
+        byte[] publicKeyBytes = Base64.getDecoder().decode(publicKeyBase64);
+        PublicKey publicKey = loadPublicKey(publicKeyBytes);
+
+        // Hasher le document
+        byte[] documentHash = hashDocument(document.getContent());
+
+        // Décoder le hash signé
+        byte[] signedHash = Base64.getDecoder().decode(signedHashBase64);
+
+        // Vérifier la signature
+        return verifySignature(documentHash, signedHash, publicKey);
+    }
+
+
+    // 🔹 Méthodes utilitaires (inchangées)
 
     // 🔹 Méthode pour hasher un document (SHA-256)
     private byte[] hashDocument(byte[] content) throws NoSuchAlgorithmException {
@@ -56,6 +104,12 @@ public class SignatureService {
         return signature.sign();
     }
 
+    // 🔹 Charger une clé publique depuis un tableau de bytes
+    private PublicKey loadPublicKey(byte[] publicKeyBytes) throws Exception {
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        return keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyBytes));
+    }
+
     // 🔹 Méthode pour vérifier une signature
     private boolean verifySignature(byte[] hash, byte[] signedHash, PublicKey publicKey) throws Exception {
         java.security.Signature signature = java.security.Signature.getInstance("SHA256withRSA");
@@ -64,10 +118,4 @@ public class SignatureService {
         return signature.verify(signedHash);
     }
 
-    // 🔹 Encode the PublicKey as a Base64 string
-    private String encodePublicKey(PrivateKey privateKey) throws NoSuchAlgorithmException, InvalidKeySpecException {
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(privateKey.getEncoded()));
-        return Base64.getEncoder().encodeToString(publicKey.getEncoded());
-    }
 }

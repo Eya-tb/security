@@ -18,7 +18,7 @@ public class UserController {
 
     // 🔹 Inscription d'un nouvel utilisateur
     @PostMapping("/register")
-    public ResponseEntity<User> registerUser(@RequestBody User user) {
+    public ResponseEntity<User> registerUser(@RequestBody User user) throws Exception {
         return ResponseEntity.ok(userService.registerUser(user));
     }
 
