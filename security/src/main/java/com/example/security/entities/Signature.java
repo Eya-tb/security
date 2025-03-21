@@ -1,19 +1,16 @@
 package com.example.security.entities;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "signatures") // Make sure the table name matches the database
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Entity
+@Table(name = "signatures")
 public class Signature {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -26,17 +23,17 @@ public class Signature {
     @Column(nullable = false)
     private String algorithm;
 
-    @Column(nullable = false, columnDefinition = "TEXT") // Ensure proper column type
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String publicKey;
 
     @Column(nullable = false)
     private LocalDateTime signedAt;
 
     @OneToOne
-    @JoinColumn(name = "document_id", nullable = false)
-    private Document document;
+    @JoinColumn(name = "document_id", referencedColumnName = "id", nullable = false, unique = true)
+    private Document document;  // ✅ Ensures One-to-One
 
     @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", referencedColumnName = "id", nullable = false)
     private User user;
 }
