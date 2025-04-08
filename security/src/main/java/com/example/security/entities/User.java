@@ -1,8 +1,9 @@
 package com.example.security.entities;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 
 import java.util.List;
@@ -22,7 +23,8 @@ public class User {
     private String username;
 
     @Column(nullable = false)
-    @JsonIgnore // Masque le mot de passe dans les réponses JSON
+    @NotBlank(message = "Password is mandatory")
+
     private String password;
 
     @Column(unique = true, nullable = false)
@@ -32,7 +34,7 @@ public class User {
     @Column(nullable = false)
     private Role role; // ADMIN or USER
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "signer", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Signature> signatures; // ✅ Changed to List
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)

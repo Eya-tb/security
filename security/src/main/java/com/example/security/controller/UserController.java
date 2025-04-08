@@ -2,6 +2,7 @@ package com.example.security.controller;
 
 import com.example.security.entities.User;
 import com.example.security.services.UserService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,7 +19,7 @@ public class UserController {
 
     // 🔹 Inscription d'un nouvel utilisateur
     @PostMapping("/register")
-    public ResponseEntity<User> registerUser(@RequestBody User user) throws Exception {
+    public ResponseEntity<User> registerUser(@Valid @RequestBody User user) throws Exception {
         return ResponseEntity.ok(userService.registerUser(user));
     }
 
