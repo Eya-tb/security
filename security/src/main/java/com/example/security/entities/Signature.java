@@ -26,8 +26,10 @@ public class Signature {
     @Column(nullable = false)
     private LocalDateTime signedAt;
 
-    @Column
-    private String timestampToken;  // Ajoute à l'entité Signature
+    @Lob
+    @Column(name = "timestamp_token", columnDefinition = "LONGTEXT")
+    private String timestampToken;
+    // Ajoute à l'entité Signature
 
     @OneToOne
     @JoinColumn(name = "document_id", nullable = false)
