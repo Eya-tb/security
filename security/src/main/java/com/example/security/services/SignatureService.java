@@ -6,6 +6,7 @@ import com.example.security.entities.User;
 import com.example.security.repositories.DocumentRepository;
 import com.example.security.repositories.SignatureRepository;
 import com.example.security.repositories.UserRepository;
+import com.example.security.services.KeyVaultService;
 import com.example.security.utils.KeyUtils;
 import com.example.security.utils.SigningUtils;
 import jakarta.persistence.EntityNotFoundException;
@@ -27,10 +28,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigInteger;
 import java.security.*;
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.Date;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -42,7 +40,7 @@ public class SignatureService {
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
     private final TSAClient tsaClient;
-
+    private final KeyVaultService keyVaultService;
     // Initialisation du provider Bouncy Castle
     static {
         if (Security.getProvider("BC") == null) {
@@ -50,35 +48,42 @@ public class SignatureService {
         }
     }
 
-    public Signature createSignature(Long documentId, Long userId, String privateKeyBase64) throws Exception {
+    public Signature createSignature(Long documentId, Long userId, String userPassword) throws Exception {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new EntityNotFoundException("Document not found"));
-
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
-
-        // 1. Préparation des clés
+        // Récupérer la clé privée chiffrée et la déchiffrer
+        String encryptedPrivateKey = user.getPrivateKey();
+        String privateKeyBase64 = keyVaultService.decryptPrivateKey(encryptedPrivateKey, userPassword);
+        // Préparation des clés
         byte[] privateKeyBytes = Base64.getDecoder().decode(privateKeyBase64);
         PrivateKey privateKey = KeyUtils.loadPrivateKey(privateKeyBytes);
         PublicKey publicKey = KeyUtils.extractPublicKey(privateKey);
 
-        // 2. Calcul du hash du document
+        // Calcul du hash du document
         byte[] documentHash = calculateSHA256(document.getContent());
 
-        // 3. Création de la signature
+        // Création de la signature
         byte[] signatureBytes = SigningUtils.sign(documentHash, privateKey);
 
-        // 4. Obtention du tampon temporel certifié
+        // Obtention du tampon temporel certifié
         byte[] timestampToken = getTimestampToken(signatureBytes);
 
-        // 5. Sauvegarde de la signature
+        // Sauvegarde de la signature
         Signature signature = new Signature();
         signature.setSignedHash(signatureBytes);
         signature.setPublicKey(Base64.getEncoder().encodeToString(publicKey.getEncoded()));
         signature.setSignedAt(LocalDateTime.now());
         signature.setTimestampToken(Base64.getEncoder().encodeToString(timestampToken));
-        signature.setDocument(document);
-        signature.setSigner(user);
+        signature.setDocument(document); // Liaison avec le document
+        signature.setSigner(user); // Liaison avec l'utilisateur
+
+        // Synchronisation de la relation bidirectionnelle
+        document.setSignature(signature);
+
+        // Log détaillé pour le debug
+        logger.info("Signature created: {}", signature);
 
         return signatureRepository.save(signature);
     }
@@ -160,7 +165,7 @@ public class SignatureService {
 
             for (X509CertificateHolder holder : matches) {
                 if (holder.getSerialNumber().equals(signerId.getSerialNumber()) &&
-                    holder.getIssuer().equals(signerId.getIssuer())) {
+                        holder.getIssuer().equals(signerId.getIssuer())) {
                     certHolder = holder;
                     break;
                 }

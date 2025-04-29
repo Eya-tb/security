@@ -1,5 +1,7 @@
 package com.example.security.entities;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -7,8 +9,13 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "signatures")
-@Getter @Setter @NoArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Signature {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -29,13 +36,14 @@ public class Signature {
     @Lob
     @Column(name = "timestamp_token", columnDefinition = "LONGTEXT")
     private String timestampToken;
-    // Ajoute à l'entité Signature
 
     @OneToOne
     @JoinColumn(name = "document_id", nullable = false)
+    @JsonIgnoreProperties("signature") // Ignore la signature quand on sérialise le document
     private Document document;
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonBackReference // Empêche les boucles infinies lors de la sérialisation JSON
     private User signer;
 }

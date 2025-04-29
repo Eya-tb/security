@@ -1,7 +1,9 @@
 package com.example.security.controller;
 
 import com.example.security.entities.Signature;
+import com.example.security.services.DocumentService;
 import com.example.security.services.SignatureService;
+import com.example.security.services.UserService;
 import jakarta.persistence.EntityNotFoundException;
 
 import jakarta.validation.Valid;
@@ -21,6 +23,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/signatures")
@@ -28,36 +31,38 @@ import java.time.LocalDateTime;
 @Validated
 public class SignatureController {
     private final SignatureService signatureService;
+    private final DocumentService documentService;
+    private final UserService userService;
 
     @PostMapping("/sign")
-    public ResponseEntity<ApiResponse<SignatureResponse>> signDocument(
-            @Valid @RequestBody SignRequest request) {
+    public ResponseEntity<?> signDocument(@RequestBody SignRequest request) {
         try {
-            Signature signature = signatureService.createSignature(
-                    request.getDocumentId(),
-                    request.getUserId(),
-                    request.getPrivateKeyBase64()
-            );
-
-            return ResponseEntity.ok(
-                    new ApiResponse<>(
-                            "Document signed successfully",
-                            new SignatureResponse(
-                                    signature.getId(),
-                                    signature.getDocument().getId(),
-                                    signature.getSignedAt()
-                            )
-                    )
-            );
+            documentService.signDocument(request.getDocumentId(),
+                    userService.getUserById(request.getUserId()),
+                    request.getPrivateKeyBase64());
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Document signé avec succès"
+            ));
+        } catch (IllegalStateException e) {
+            // Gestion spécifique pour document déjà signé
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of(
+                            "success", false,
+                            "message", e.getMessage()
+                    ));
         } catch (EntityNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ApiResponse<>(e.getMessage(), null));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse<>(e.getMessage(), null));
+                    .body(Map.of(
+                            "success", false,
+                            "message", e.getMessage()
+                    ));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(new ApiResponse<>("Signing failed: " + e.getMessage(), null));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(
+                            "success", false,
+                            "message", "Erreur lors de la signature: " + e.getMessage()
+                    ));
         }
     }
 

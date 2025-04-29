@@ -37,7 +37,7 @@ public class User {
     @OneToMany(mappedBy = "signer", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Signature> signatures; // ✅ Changed to List
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true , fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<Document> documents; // ✅ Changed to List
 
@@ -46,4 +46,17 @@ public class User {
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String publicKey; // Stored in Base64
+
+
+
+    @Column(name = "mfa_enabled")
+    private boolean mfaEnabled = false;
+
+    @Column(name = "mfa_secret")
+    private String mfaSecret;
+
+
+    @Column(name = "mfa_temp_secret")
+    private String mfaTempSecret;
+
 }
