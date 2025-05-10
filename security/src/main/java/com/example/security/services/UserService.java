@@ -3,9 +3,9 @@ package com.example.security.services;
 import com.example.security.entities.Role;
 import com.example.security.entities.User;
 import com.example.security.repositories.UserRepository;
-import com.example.security.services.KeyVaultService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
@@ -14,93 +14,125 @@ import java.util.List;
 
 @Service
 public class UserService {
+
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final LoginAttemptService loginAttemptService;
     private final MfaService mfaService;
     private final PasswordValidationService passwordValidationService;
     private final KeyVaultService keyVaultService;
+    private final BackupKeyService backupKeyService;
+
     public UserService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder,
-                       LoginAttemptService loginAttemptService, MfaService mfaService, PasswordValidationService passwordValidationService, KeyVaultService keyVaultService) {
+                       LoginAttemptService loginAttemptService, MfaService mfaService,
+                       PasswordValidationService passwordValidationService,
+                       KeyVaultService keyVaultService,
+                       BackupKeyService backupKeyService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.loginAttemptService = loginAttemptService;
         this.mfaService = mfaService;
         this.passwordValidationService = passwordValidationService;
         this.keyVaultService = keyVaultService;
+        this.backupKeyService = backupKeyService;
     }
 
-    // 🔹 Inscription d'un utilisateur avec génération des clés RSA
+    // 🔐 Enregistrement utilisateur avec génération + double chiffrement de la clé privée
     public User registerUser(User user, String password) throws Exception {
         if (userRepository.existsByEmail(user.getEmail())) {
             throw new RuntimeException("Cet email est déjà utilisé !");
         }
 
-        // Validation de la complexité du mot de passe
+        // 🔒 Vérification des règles de sécurité du mot de passe
         List<String> passwordErrors = passwordValidationService.validatePassword(user.getPassword());
         if (!passwordErrors.isEmpty()) {
             throw new RuntimeException("Mot de passe invalide : " + String.join(", ", passwordErrors));
         }
 
-        // Hacher le mot de passe avant enregistrement
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-
-        // Générer les clés RSA pour l'utilisateur
+        // 🔑 Générer la paire de clés RSA
         KeyPair keyPair = generateKeyPair();
         String privateKeyBase64 = Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded());
         String publicKeyBase64 = Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
-        // Chiffrer la clé privée avec le mot de passe
+        // 🔐 Chiffrer la clé privée avec le mot de passe utilisateur
         String encryptedPrivateKey = keyVaultService.encryptPrivateKey(privateKeyBase64, password);
-        // Stocker les clés générées
         user.setPrivateKey(encryptedPrivateKey);
-        user.setPublicKey(publicKeyBase64);
 
-        // Définir le rôle de l'utilisateur (USER par défaut)
+        // 🛡️ Chiffrer la clé privée avec la clé maîtresse pour backup
+        String masterKey = backupKeyService.getMasterBackupKey();
+        String backupEncryptedKey = keyVaultService.encryptPrivateKey(privateKeyBase64, masterKey);
+        user.setBackupPrivateKey(backupEncryptedKey);
+
+        // 🧂 Hasher le mot de passe
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
+
+        // 📤 Stocker la clé publique
+        user.setPublicKey(publicKeyBase64);
         user.setRole(Role.USER);
 
         return userRepository.save(user);
     }
 
-    //  une méthode pour changer le mot de passe en vérifiant la politique
-    public void changePassword(Long userId, String oldPassword, String newPassword) throws Exception{
+    // 🔁 Changement de mot de passe avec récupération de la clé privée
+    public void changePassword(Long userId, String oldPassword, String newPassword) throws Exception {
         User user = getUserById(userId);
 
-        // Vérifier l'ancien mot de passe
         if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
             throw new RuntimeException("Ancien mot de passe incorrect");
         }
-        // Valider le nouveau mot de passe
+
         List<String> passwordErrors = passwordValidationService.validatePassword(newPassword);
         if (!passwordErrors.isEmpty()) {
             throw new RuntimeException("Nouveau mot de passe invalide : " + String.join(", ", passwordErrors));
         }
-        // Décrypter la clé privée avec l'ancien mot de passe
+
+        // 🔓 Déchiffrer la clé privée avec l'ancien mot de passe
         String privateKeyBase64 = keyVaultService.decryptPrivateKey(user.getPrivateKey(), oldPassword);
 
-        // La rechiffrer avec le nouveau mot de passe
+        // 🔐 Rechiffrer avec le nouveau mot de passe
         String newEncryptedPrivateKey = keyVaultService.encryptPrivateKey(privateKeyBase64, newPassword);
 
-        // Mettre à jour le mot de passe
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setPrivateKey(newEncryptedPrivateKey);
         userRepository.save(user);
     }
+    public void recoverUserKeys(String email, String newPassword) throws Exception {
+        User user = userRepository.findByEmail(email);
+        if (user == null) throw new RuntimeException("User not found");
 
-        // 🔹 Générer une paire de clés RSA
+        // 1. Récupérer clé maîtresse depuis Vault
+        String masterKey = backupKeyService.getMasterBackupKey();
+
+        // 2. Déchiffrer la clé backup avec la clé maîtresse
+        String decryptedPrivateKey = keyVaultService.decryptPrivateKey(
+                user.getBackupPrivateKey(),
+                masterKey
+        );
+
+        // 3. Rechiffrer avec le nouveau mot de passe
+        String reEncryptedKey = keyVaultService.encryptPrivateKey(
+                decryptedPrivateKey,
+                newPassword
+        );
+
+        // 4. Mettre à jour
+        user.setPrivateKey(reEncryptedKey);
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    // 🛠 Méthodes utilitaires
     private KeyPair generateKeyPair() throws NoSuchAlgorithmException {
         KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
         return keyGen.generateKeyPair();
     }
 
-    // 🔹 Récupérer un utilisateur par son ID
     public User getUserById(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé !"));
     }
 
-    // 🔹 Récupérer tous les utilisateurs
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
@@ -126,11 +158,10 @@ public class UserService {
         userRepository.deleteById(userId);
     }
 
-    // Méthodes pour la gestion de l'authentification à deux facteurs (MFA)
+    // 🔐 MFA (2FA) fonctions
     public void enableMfa(Long userId) {
         User user = getUserById(userId);
         String secret = mfaService.generateSecret();
-        // Stockage temporaire du secret avant confirmation
         user.setMfaTempSecret(secret);
         userRepository.save(user);
     }
@@ -155,43 +186,30 @@ public class UserService {
 
     public boolean verifyCode(Long userId, String code) {
         User user = getUserById(userId);
-
-        // Vérifier d'abord avec le secret final s'il existe
         if (user.isMfaEnabled() && user.getMfaSecret() != null) {
             return mfaService.verifyCode(user.getMfaSecret(), code);
-        }
-        // Sinon vérifier avec le secret temporaire
-        else if (user.getMfaTempSecret() != null) {
+        } else if (user.getMfaTempSecret() != null) {
             return mfaService.verifyCode(user.getMfaTempSecret(), code);
         }
-
         return false;
     }
 
     public void confirmMfaSetup(Long userId) {
         User user = getUserById(userId);
-
-        // Transférer le secret temporaire vers le secret final
         if (user.getMfaTempSecret() != null) {
             user.setMfaSecret(user.getMfaTempSecret());
             user.setMfaTempSecret(null);
         }
-
         user.setMfaEnabled(true);
         userRepository.save(user);
     }
 
-    // Vérification MFA pour l'authentification
     public boolean verifyMfaCode(Long userId, String code) {
         User user = getUserById(userId);
-        if (user.getMfaSecret() == null) {
-            return false;
-        }
-
+        if (user.getMfaSecret() == null) return false;
         return mfaService.verifyCode(user.getMfaSecret(), code);
     }
 
-    // Récupérer un utilisateur par son email
     public User findByEmail(String email) {
         return userRepository.findByEmail(email);
     }

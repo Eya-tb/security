@@ -50,11 +50,13 @@ public class DocumentController {
 
     @PostMapping("/upload")
     public ResponseEntity<?> uploadDocument(@RequestParam("file") MultipartFile file,
+                                            @RequestParam(name = "forceUpload", required = false, defaultValue = "false") boolean forceUpload,
                                             Authentication authentication) {
         try {
             // Vérifier la similarité avec les documents existants
             List<Document> similarDocs = documentService.findSimilarDocuments(file.getBytes(), 0.9);
-            if (!similarDocs.isEmpty()) {
+
+            if (!similarDocs.isEmpty() && !forceUpload) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("message", "Un document similaire existe déjà dans le système");
                 response.put("similarDocuments", similarDocs.stream()
@@ -66,7 +68,8 @@ public class DocumentController {
                         .collect(Collectors.toList()));
                 return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
             }
-            // Si aucun document similaire, procéder à l'upload
+
+            // Si aucun document similaire ou utilisateur force l'upload
             UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
             Document document = documentService.uploadDocument(file, userPrincipal);
             return ResponseEntity.ok(ApiResponse.success("Document uploadé avec succès", document));

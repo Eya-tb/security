@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
-
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -73,4 +72,6 @@ public class KeyVaultService {
         byte[] keyBytes = digest.digest(password.getBytes(StandardCharsets.UTF_8));
         return new SecretKeySpec(keyBytes, "AES");
     }
+
+
 }

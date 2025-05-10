@@ -21,6 +21,9 @@ public class PasswordResetService {
     private final EmailService emailService;
     private final BCryptPasswordEncoder passwordEncoder;
     private final PasswordValidationService passwordValidationService;
+    private final UserService userService;
+
+
     @Value("${app.password-reset.expiration-minutes}")
     private int expirationMinutes;
 

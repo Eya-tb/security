@@ -1,9 +1,7 @@
 package com.example.security.services;
 
-import com.example.security.entities.Document;
-import com.example.security.entities.Role;
-import com.example.security.entities.Signature;
-import com.example.security.entities.User;
+import com.example.security.entities.*;
+import com.example.security.repositories.DocumentPermissionRepository;
 import com.example.security.repositories.DocumentRepository;
 import com.example.security.repositories.SignatureRepository;
 import com.example.security.repositories.UserRepository;
@@ -21,6 +19,7 @@ import java.io.*;
 
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
 import java.util.*;
 
 import org.springframework.data.domain.Page;
@@ -36,7 +35,7 @@ public class DocumentService {
     private final SignatureService signatureService;
     private final UserRepository userRepository;
     private final DocumentIntegrityService documentIntegrityService;
-
+    private final DocumentPermissionRepository permissionRepository;
     public Document uploadDocument(MultipartFile file, UserDetails userDetails) throws IOException, NoSuchAlgorithmException {
         UserPrincipal userPrincipal = (UserPrincipal) userDetails;
         User user = userRepository.findById(userPrincipal.getId())
@@ -304,6 +303,112 @@ public class DocumentService {
             int bitDifferences = Long.bitCount(xor);
             return 1.0 - (bitDifferences / 64.0);
         }
+    }
+
+
+    // Méthode pour partager un document
+    public DocumentPermission shareDocument(Long documentId, Long userId, DocumentPermission.PermissionType permissionType,
+                                            LocalDateTime expiresAt, UserDetails currentUser) {
+        UserPrincipal userPrincipal = (UserPrincipal) currentUser;
+
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new EntityNotFoundException("Document introuvable"));
+
+        User targetUser = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur introuvable"));
+
+        // Vérifier que l'utilisateur courant est le propriétaire du document ou un admin
+        if (!document.getUser().getId().equals(userPrincipal.getId())
+                && userPrincipal.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))) {
+            throw new SecurityException("Vous n'êtes pas autorisé à partager ce document");
+        }
+
+        DocumentPermission permission = new DocumentPermission();
+        permission.setDocument(document);
+        permission.setUser(targetUser);
+        permission.setPermissionType(permissionType);
+        permission.setGrantedAt(LocalDateTime.now());
+        permission.setExpiresAt(expiresAt);
+        permission.setCreatedBy(userPrincipal.getId());
+
+        return permissionRepository.save(permission);
+    }
+
+    // Méthode pour vérifier si un utilisateur a une permission
+    public boolean hasPermission(Long documentId, Long userId, DocumentPermission.PermissionType permissionType) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new EntityNotFoundException("Document introuvable"));
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("Utilisateur introuvable"));
+
+        // Le propriétaire du document a toujours toutes les permissions
+        if (document.getUser().getId().equals(userId)) {
+            return true;
+        }
+
+        // Les admins ont toutes les permissions
+        if (user.getRole() == Role.ADMIN) {
+            return true;
+        }
+
+        // Vérifier les permissions explicites qui ne sont pas expirées
+        List<DocumentPermission> permissions = permissionRepository
+                .findValidPermissions(document, user, LocalDateTime.now());
+
+        return permissions.stream()
+                .anyMatch(p -> p.getPermissionType() == permissionType);
+    }
+
+    // Modifier la méthode getDocumentById pour vérifier les permissions
+    public Document getDocumentById(Long id, UserDetails userDetails) {
+        Document document = documentRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Document non trouvé avec l'ID: " + id));
+
+        UserPrincipal userPrincipal = (UserPrincipal) userDetails;
+        boolean isOwner = document.getUser().getId().equals(userPrincipal.getId());
+        boolean isAdmin = userPrincipal.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        boolean hasPermission = hasPermission(id, userPrincipal.getId(), DocumentPermission.PermissionType.READ);
+
+        if (!isOwner && !isAdmin && !hasPermission) {
+            throw new SecurityException("Vous n'avez pas la permission de voir ce document");
+        }
+
+        if (document.getSignature() != null && document.getSignature().getSigner() == null) {
+            document.getSignature().setSigner(new User());
+            document.getSignature().getSigner().setUsername("Utilisateur inconnu");
+        }
+
+        return document;
+    }
+
+    // Méthode pour récupérer les documents partagés avec un utilisateur
+    public List<Document> getSharedDocuments(User user) {
+        List<DocumentPermission> permissions = permissionRepository.findByUser(user);
+        return permissions.stream()
+                .map(DocumentPermission::getDocument)
+                .distinct()
+                .map(doc -> {
+                    doc.setContent(null); // Ne pas renvoyer le contenu dans les listes
+                    return doc;
+                })
+                .toList();
+    }
+
+    // Méthode pour révoquer un accès
+    public void revokeAccess(Long permissionId, UserDetails currentUser) {
+        UserPrincipal userPrincipal = (UserPrincipal) currentUser;
+
+        DocumentPermission permission = permissionRepository.findById(permissionId)
+                .orElseThrow(() -> new EntityNotFoundException("Permission introuvable"));
+
+        // Vérifier que l'utilisateur courant est le propriétaire ou un admin
+        if (!permission.getDocument().getUser().getId().equals(userPrincipal.getId())
+                && userPrincipal.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))) {
+            throw new SecurityException("Vous n'êtes pas autorisé à révoquer cet accès");
+        }
+
+        permissionRepository.delete(permission);
     }
 
 

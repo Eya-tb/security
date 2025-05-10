@@ -22,20 +22,23 @@ public class CertificateController {
     private final UserService userService;
 
     @GetMapping("/export/pem")
-    public ResponseEntity<Resource> exportCertificatePEM(@AuthenticationPrincipal UserPrincipal currentUser) {
+    public ResponseEntity<Resource> exportCertificatePEM(
+            @AuthenticationPrincipal UserPrincipal currentUser,
+            @RequestParam String password) {
         try {
             User user = userService.getUserById(currentUser.getId());
-            byte[] certificateData = certificateService.generateSelfSignedCertificate(user);
+
+            // Déchiffrer la clé privée via KeyVaultService
+            byte[] certificateData = certificateService.generateSelfSignedCertificate(user, password);
 
             ByteArrayResource resource = new ByteArrayResource(certificateData);
-
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + user.getUsername() + "-certificate.pem\"")
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .contentLength(certificateData.length)
                     .body(resource);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+            return ResponseEntity.status(500).build();
         }
     }
 
@@ -46,9 +49,7 @@ public class CertificateController {
         try {
             User user = userService.getUserById(currentUser.getId());
             byte[] certificateData = certificateService.exportToPKCS12(user, password);
-
             ByteArrayResource resource = new ByteArrayResource(certificateData);
-
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + user.getUsername() + "-certificate.p12\"")
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)

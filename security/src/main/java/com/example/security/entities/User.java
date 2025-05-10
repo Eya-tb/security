@@ -22,9 +22,11 @@ public class User {
     @Column(unique = true, nullable = false)
     private String username;
 
-    @Column(nullable = false)
-    @NotBlank(message = "Password is mandatory")
 
+
+
+    @Column(nullable = false, length = 255) // Ou VARCHAR(255) en SQL
+    @NotBlank(message = "Password is mandatory")
     private String password;
 
     @Column(unique = true, nullable = false)
@@ -58,5 +60,13 @@ public class User {
 
     @Column(name = "mfa_temp_secret")
     private String mfaTempSecret;
+
+    // Dans la classe User
+
+
+    @Column(length = 2048)
+    private String backupPrivateKey;
+
+
 
 }
